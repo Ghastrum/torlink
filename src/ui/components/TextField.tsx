@@ -40,6 +40,24 @@ export function deleteWordBefore(value: string, cursor: number): Edit {
   return { value: value.slice(0, i) + value.slice(cursor), cursor: i };
 }
 
+export function wordLeft(value: string, cursor: number): number {
+  let i = cursor;
+  while (i > 0 && value[i - 1] === " ") i--;
+  while (i > 0 && value[i - 1] !== " ") i--;
+  return i;
+}
+
+export function wordRight(value: string, cursor: number): number {
+  let i = cursor;
+  while (i < value.length && value[i] === " ") i++;
+  while (i < value.length && value[i] !== " ") i++;
+  return i;
+}
+
+export function deleteWordAfter(value: string, cursor: number): Edit {
+  return { value: value.slice(0, cursor) + value.slice(wordRight(value, cursor)), cursor };
+}
+
 export function killToEnd(value: string, cursor: number): Edit {
   return { value: value.slice(0, cursor), cursor };
 }
@@ -85,6 +103,47 @@ export function TextField({
         return;
       }
 
+      if (key.home) {
+        setCursor(0);
+        return;
+      }
+      if (key.end) {
+        setCursor(value.length);
+        return;
+      }
+
+      // Modifier+named-key combos must be handled before the ctrl switch:
+      // named keys arrive with an empty input, so they'd hit its default arm
+      // and vanish.
+      if (key.leftArrow) {
+        if (key.ctrl || key.meta) {
+          setCursor(wordLeft(value, cursor));
+          return;
+        }
+        if (cursor === 0) {
+          onExitLeft?.();
+          return;
+        }
+        setCursor(cursor - 1);
+        return;
+      }
+      if (key.rightArrow) {
+        if (key.ctrl || key.meta) {
+          setCursor(wordRight(value, cursor));
+          return;
+        }
+        setCursor(Math.min(value.length, cursor + 1));
+        return;
+      }
+      if (key.delete) {
+        apply(key.ctrl || key.meta ? deleteWordAfter(value, cursor) : deleteAt(value, cursor));
+        return;
+      }
+      if (key.backspace) {
+        apply(key.ctrl || key.meta ? deleteWordBefore(value, cursor) : deleteBefore(value, cursor));
+        return;
+      }
+
       if (key.ctrl) {
         switch (input) {
           case "u":
@@ -102,32 +161,20 @@ export function TextField({
           case "e":
             setCursor(value.length);
             return;
+          // Every other ctrl combo is swallowed so views behind the field
+          // never see it; ctrl+d stays free for view-level bindings.
           default:
             return;
         }
       }
 
-      if (key.leftArrow) {
-        if (cursor === 0) {
-          onExitLeft?.();
-          return;
+      if (key.meta) {
+        if (input === "d") {
+          apply(deleteWordAfter(value, cursor));
         }
-        setCursor(cursor - 1);
         return;
       }
-      if (key.rightArrow) {
-        setCursor(Math.min(value.length, cursor + 1));
-        return;
-      }
-      if (key.delete) {
-        apply(deleteAt(value, cursor));
-        return;
-      }
-      if (key.backspace) {
-        apply(deleteBefore(value, cursor));
-        return;
-      }
-      if (key.meta || !input) return;
+      if (!input) return;
       const text = input
         .replace(/\x1b?\[<\d+;\d+;\d+[Mm]/g, "") // SGR mouse
         .replace(/\x1b\[20[01]~/g, "") // Bracketed paste
